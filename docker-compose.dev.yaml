@@ -1,0 +1,24 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.dev
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      - LOG_LEVEL=DEBUG
+      - PROMETHEUS_MULTIPROC_DIR=/tmp
+    depends_on:
+      - postgres
+
+  postgres:
+    image: postgres:15-bookworm
+    environment:
+      - POSTGRES_USER=root
+      - POSTGRES_PASSWORD=secret
+      - POSTGRES_DB=postgres
+    ports:
+      - "5432:5432"
