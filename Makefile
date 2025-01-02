@@ -1,15 +1,15 @@
 SHELL := /bin/bash
 
-# adicionar o add-dev-package
 ifeq ($(filter add-package add-dev-package,$(firstword $(MAKECMDGOALS))),$(firstword $(MAKECMDGOALS)))
-  # use the rest as arguments for "good"
   RUN_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
-  # ...and turn them into do-nothing targets
   $(eval $(RUN_ARGS):;@:)
 endif
 
 clean:
 	find . -type d -name "__pycache__" -exec rm -rf {} +
+
+dependencies:
+	sudo apt install -y make clang python3-dev libpq-dev
 
 python-environment:
 	source .venv/bin/activate
@@ -21,16 +21,16 @@ add-dev-package:
 	uv add --dev $(RUN_ARGS)
 
 install-dev:
-	uv sync --frozen
+	UV_HTTP_TIMEOUT=600 uv sync --frozen
 
 install-prod:
-	uv sync --frozen --compile-bytecode --no-dev
+	UV_HTTP_TIMEOUT=600 uv sync --frozen --compile-bytecode --no-dev
 
 run-dev:
-	LOG_LEVEL=DEBUG uv run uvicorn --host 0.0.0.0 src.main:app --reload
+	uv run uvicorn --host 0.0.0.0 src.main:app --reload
 
 run:
-	LOG_LEVEL=INFO uv run gunicorn -c gunicorn.conf.py src.main:app
+	gunicorn -c gunicorn.conf.py src.main:app
 
 run-compose:
 	docker compose -f docker-compose.yaml up --build -d
@@ -45,8 +45,9 @@ stop-all-dev:
 	docker compose -f docker-compose.dev.yaml stop
 
 test:
-	uv run pytest --cov=src --cov-report=term-missing --cov-report=html tests
+	uv run pytest -s --cov=src --cov-report=term-missing --cov-report=html tests
 
 pre-commit:
-	uv run ruff check --select I --fix
+	uv run ruff check
 	uv run ruff format
+	docker run --rm -i hadolint/hadolint < docker/Dockerfile

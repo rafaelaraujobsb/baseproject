@@ -18,17 +18,18 @@ dependencies = [
     "python-json-logger>=2.0.7",
     "requests>=2.32.3",
     "sqlalchemy>=2.0.36",
+    "structlog==24.4.0",
 ]
 
 [dependency-groups]
 dev = [
-    "pytest-dotenv>=0.5.2",
-    "pytest>=8.3.3",
-    "ruff>=0.8.0",
-    "uvicorn>=0.32.1",
-    "httpx>=0.27.2",
-    "pytest-cov>=6.0.0",
-    "flake8-bandit>=4.1.1",
+    "pytest-dotenv==0.5.2",
+    "pytest==8.3.3",
+    "ruff==0.8.0",
+    "httpx==0.27.2",
+    "pytest-cov==6.0.0",
+    "flake8-bandit==4.1.1",
+    "pytest-env==1.1.5",
 ]
 
 [tool.pytest.ini_options]
@@ -40,6 +41,21 @@ testpaths = [
 
 [tool.ruff]
 line-length = 120
+fix = true
+show-fixes = true
+namespace-packages = ["src"]
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "FAST", "S"]
+fixable = ["ALL"]
+ignore = ["S104"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*.py" = ["S101"]
 
 [tool.ruff.lint.flake8-bandit]
 check-typed-exception = true
+
+[tool.pytest_env]
+ENABLE_METRICS = false

@@ -1,127 +1,65 @@
 import logging
 import time
-from typing import Callable
+from uuid import uuid4
 
+from asgi_correlation_id import CorrelationIdMiddleware
 from fastapi import FastAPI, Request, Response
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.types import Message
+from fastapi.middleware.cors import CORSMiddleware
+
+from src.api.schema.default_message import MESSAGE_500
 
 
-class AsyncIteratorWrapper:
-    """The following is a utility class that transforms a
-    regular iterable to an asynchronous one.
-
-    link: https://www.python.org/dev/peps/pep-0492/#example-2
-    """
-
-    def __init__(self, obj):
-        self._it = iter(obj)
-
-    def __aiter__(self):
-        return self
-
-    async def __anext__(self):
-        try:
-            value = next(self._it)
-        except StopIteration:
-            raise StopAsyncIteration
-        return value
+def request_logging_data(request: Request) -> dict:
+    return {
+        "method": request.method,
+        "path": request.url.path,
+        "ip": request.client.host,
+    }
 
 
-class RouterLoggingMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app: FastAPI, *, logger: logging.Logger):
-        self._logger = logger
-        super().__init__(app)
+def response_logging_data(response: Response, process_time: float) -> dict:
+    return {
+        "status": "successful" if response and response.status_code < 400 else "failed",
+        "status_code": response.status_code,
+        "time_taken": f"{process_time / 10**9:.4f}s",
+    }
 
-    async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        await self.set_body(request)
-        response, response_dict = await self._log_response(call_next, request)
-        request_dict = await self._log_request(request)
 
-        logging_dict = {"request": request_dict, "response": response_dict}
+def add_middleware(app: FastAPI, logger: logging.Logger, enable_logging_exception: bool = True):
+    @app.middleware("http")
+    async def logging_middleware(request: Request, call_next) -> Response:
+        start_time = time.perf_counter_ns()
 
-        self._logger.info(logging_dict)
-
-        return response
-
-    async def set_body(self, request: Request):
-        """Avails the response body to be logged within a middleware as,
-        it is generally not a standard practice.
-
-           Arguments:
-           - request: Request
-           Returns:
-           - receive_: Receive
-        """
-        receive_ = await request._receive()
-
-        async def receive() -> Message:
-            return receive_
-
-        request._receive = receive
-
-    async def _log_request(self, request: Request) -> str:
-        path = request.url.path
-        if request.query_params:
-            path += f"?{request.query_params}"
-
-        request_logging = {
-            "method": request.method,
-            "path": path,
-            "ip": request.client.host,
-        }
+        logger.info(request_logging_data(request))
 
         try:
-            body = await request.json()
-            request_logging["body"] = body
+            response = await call_next(request)
+
         except Exception:
-            body = None
+            response = MESSAGE_500
+            if enable_logging_exception:
+                logger.exception("Uncaught exception")
 
-        return request_logging
+        finally:
+            process_time = time.perf_counter_ns() - start_time
 
-    async def _log_response(self, call_next: Callable, request: Request) -> Response:
-        """Logs response part
+            logger.info(response_logging_data(response, process_time))
 
-        Arguments:
-        - call_next: Callable (To execute the actual path function and get response back)
-        - request: Request
-        - request_id: str (uuid)
-        Returns:
-        - response: Response
-        - response_logging: str
-        """
-
-        start_time = time.perf_counter()
-        response = await self._execute_request(call_next, request)
-        finish_time = time.perf_counter()
-
-        overall_status = "successful" if response.status_code < 400 else "failed"
-        execution_time = finish_time - start_time
-
-        response_logging = {
-            "status": overall_status,
-            "status_code": response.status_code,
-            "time_taken": f"{execution_time:0.4f}s",
-        }
-
-        return response, response_logging
-
-    async def _execute_request(self, call_next: Callable, request: Request) -> Response:
-        """Executes the actual path function using call_next.
-        It also injects "X-API-Request-ID" header to the response.
-
-        Arguments:
-        - call_next: Callable (To execute the actual path function
-                     and get response back)
-        - request: Request
-        - request_id: str (uuid)
-        Returns:
-        - response: Response
-        """
-        try:
-            response: Response = await call_next(request)
+            response.headers["X-Process-Time"] = str(process_time / 10**9)
 
             return response
 
-        except Exception as e:
-            self._logger.exception({"path": request.url.path, "method": request.method, "reason": e})
+    app.add_middleware(
+        CorrelationIdMiddleware,
+        header_name="X-Request-ID",
+        update_request_header=True,
+        generator=lambda: uuid4().hex,
+    )
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )

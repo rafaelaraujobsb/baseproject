@@ -1,14 +1,12 @@
-import multiprocessing
-
 from src.config import get_settings
 
 settings = get_settings()
 
 bind = f"{settings.HOST}:{settings.PORT}"
-workers = multiprocessing.cpu_count() * 2 + 1
+workers = settings.WORKERS
 worker_class = "uvicorn.workers.UvicornWorker"
-timeout = 120
-keepalive = 5
+timeout = settings.GUNICORN_TIMEOUT
+keepalive = settings.KEEPALIVE
 max_requests = settings.MAX_REQUESTS
 loglevel = settings.LOG_LEVEL
 accesslog = "-"
